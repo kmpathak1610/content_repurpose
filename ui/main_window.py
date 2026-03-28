@@ -85,6 +85,7 @@ class MainWindow(QMainWindow):
         self.detected_clips: List[clip_detector.ClipSegment] = []
         self.source_url: Optional[str] = None
         self.youtube_subs_path: Optional[Path] = None
+        self._available_srt_files: list = []
 
         # UI Components
         self.media_player: Optional[QMediaPlayer] = None
@@ -598,41 +599,59 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def transcribe_video(self):
-        """Transcribe current video — tries YouTube subtitles first, falls back to Whisper"""
+        """Transcribe current video — tries SRT first, falls back to Whisper"""
 
         if not self.current_video_path:
             self.show_error("No video loaded")
             return
 
         language = self._get_selected_language()
-        lang_code = language if language else "hi"  # default hint for yt subs
+        lang_code = language if language else "hi"
 
         self.status_label.setText("Transcribing...")
         self.progress_bar.setRange(0, 0)
 
         try:
-            # --- Try YouTube subtitles first (fast, no Whisper needed) ---
-            yt_subs_used = False
-            if self.source_url and self.downloader.is_youtube_url(self.source_url):
+            srt_used = False
+
+            # --- Option 1: SRT already found by scanning local files ---
+            if self.youtube_subs_path and self.youtube_subs_path.exists():
+                self.status_label.setText(
+                    f"Using found SRT: {self.youtube_subs_path.name}"
+                )
+                self.current_transcript = self.downloader.parse_srt(
+                    self.youtube_subs_path
+                )
+
+                if self.current_transcript:
+                    srt_used = True
+                    print(f"[INFO] Using local SRT: {self.youtube_subs_path}")
+
+            # --- Option 2: Try downloading from YouTube URL ---
+            if (
+                not srt_used
+                and self.source_url
+                and self.downloader.is_youtube_url(self.source_url)
+            ):
                 self.status_label.setText(
                     f"Checking YouTube subtitles ({lang_code})..."
                 )
 
-                srt_path = self.downloader.download_subtitles(
+                dl_path = self.downloader.download_subtitles(
                     self.source_url, lang=lang_code
                 )
 
-                if srt_path:
+                if dl_path:
                     self.status_label.setText("Parsing YouTube subtitles...")
-                    self.current_transcript = self.downloader.parse_srt(srt_path)
+                    self.current_transcript = self.downloader.parse_srt(dl_path)
 
                     if self.current_transcript:
-                        self.youtube_subs_path = srt_path
-                        yt_subs_used = True
-                        print(f"[INFO] Using YouTube subtitles: {srt_path}")
+                        self.youtube_subs_path = dl_path
+                        srt_used = True
+                        print(f"[INFO] Using downloaded YouTube subs: {dl_path}")
 
-            # --- Fall back to Whisper if no YouTube subtitles ---
-            if not yt_subs_used:
+            # --- Option 3: Fall back to Whisper ---
+            if not srt_used:
                 print(f"[DEBUG] Transcribing with Whisper, language: {language}")
                 self.status_label.setText("Running Whisper transcription...")
                 self.current_transcript = self.transcriber.transcribe_video(
@@ -644,7 +663,7 @@ class MainWindow(QMainWindow):
 
             # Update UI
             self.populate_transcript_list()
-            source_label = "YouTube subs" if yt_subs_used else "Whisper"
+            source_label = "SRT" if srt_used else "Whisper"
             self.status_label.setText(
                 f"Transcription complete ({source_label}): "
                 f"{len(self.current_transcript)} segments"
@@ -943,8 +962,89 @@ class MainWindow(QMainWindow):
         duration = video_info.get("duration", 0)
         self.video_duration_label.setText(f"Duration: {self.format_duration(duration)}")
 
+        # Scan for existing SRT files next to the video
+        self._scan_for_srt_files()
+
         self.status_label.setText(f"Video loaded: {self.current_video_path.name}")
         self.video_loaded.emit(file_path)
+
+    def _scan_for_srt_files(self):
+        """
+        Scan for SRT files next to the current video.
+        Matches patterns like: videoname.hi.srt, videoname.hi.auto.srt
+        Handles yt-dlp sanitization differences between video and srt filenames.
+        Stores the best match for the selected transcription language.
+        """
+        self.youtube_subs_path = None
+
+        if not self.current_video_path:
+            return
+
+        video_dir = self.current_video_path.parent
+        video_stem = self.current_video_path.stem
+
+        # Find all SRT files in the same directory
+        all_srts = list(video_dir.glob("*.srt"))
+        if not all_srts:
+            return
+
+        # Normalize: replace non-alphanumeric chars with space, collapse spaces, lowercase
+        # This handles yt-dlp sanitization differences (e.g. '#' vs ' ')
+        def _norm(name):
+            result = []
+            prev_space = True  # skip leading spaces
+            for c in name.lower():
+                if c.isalnum():
+                    result.append(c)
+                    prev_space = False
+                elif not prev_space:
+                    result.append(" ")
+                    prev_space = True
+            return "".join(result).strip()
+
+        norm_video = _norm(video_stem)
+
+        matching_srts = []
+        for srt in all_srts:
+            srt_stem = srt.stem  # e.g. "...hi" or "...hi.auto"
+            norm_srt = _norm(srt_stem)
+
+            # Try exact match first, then normalized match
+            if srt_stem.startswith(video_stem):
+                remainder = srt_stem[len(video_stem) :].strip(".")
+            elif norm_srt.startswith(norm_video):
+                # Normalized match — extract language from remainder
+                remainder = norm_srt[len(norm_video) :].strip()
+            else:
+                continue
+
+            # Extract language: "hi" from "hi" or "hi auto"
+            parts = remainder.split() if remainder else []
+            lang = parts[0] if parts else "unknown"
+            matching_srts.append({"path": srt, "lang": lang})
+
+        if not matching_srts:
+            return
+
+        self._available_srt_files = matching_srts
+
+        selected_lang = self._get_selected_language() or "hi"
+
+        best = None
+        for entry in matching_srts:
+            if entry["lang"] == selected_lang:
+                best = entry
+                break
+        if not best:
+            best = matching_srts[0]
+
+        self.youtube_subs_path = best["path"]
+
+        lang_list = ", ".join(e["lang"] for e in matching_srts)
+        self.status_label.setText(
+            f"Found SRT: {best['path'].name}  [languages: {lang_list}]"
+        )
+        print(f"[INFO] Found SRT files: {[e['path'].name for e in matching_srts]}")
 
     def populate_transcript_list(self):
         """Populate transcript list widget"""
