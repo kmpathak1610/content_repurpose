@@ -387,17 +387,21 @@ class ClipDetector:
         if not self.llm_provider:
             return []
 
-        # Build transcript text with timestamps
-        transcript_text = self._build_transcript_for_llm(transcript)
+        try:
+            # Build transcript text with timestamps
+            transcript_text = self._build_transcript_for_llm(transcript)
 
-        # Create prompt for LLM
-        prompt = self._build_clip_prompt(transcript_text)
+            # Create prompt for LLM
+            prompt = self._build_clip_prompt(transcript_text)
 
-        # Get LLM response
-        response = self.llm_provider.generate(prompt)
+            # Get LLM response
+            response = self.llm_provider.generate(prompt)
 
-        # Parse response to extract clips
-        return self._parse_llm_response(response)
+            # Parse response to extract clips
+            return self._parse_llm_response(response)
+        except Exception as e:
+            print(f"LLM clip detection failed: {e} — falling back to rule-based")
+            return []
 
     def _build_transcript_for_llm(self, transcript: List[Dict[str, Any]]) -> str:
         """Build formatted transcript for LLM"""
