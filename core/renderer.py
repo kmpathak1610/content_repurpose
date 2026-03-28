@@ -355,9 +355,9 @@ class VideoRenderer:
     def _escape_ffmpeg_path(self, path: Path) -> str:
         """Escape a file path for use in ffmpeg filter strings (Windows-safe)"""
         p = str(path.resolve())
-        # ffmpeg subtitles filter needs backslashes doubled and colons escaped
-        p = p.replace("\\", "/").replace(":", "\\:")
-        # Escape single quotes and semicolons
+        # Convert backslashes to forward slashes — ffmpeg handles this on Windows
+        p = p.replace("\\", "/")
+        # Escape single quotes for ffmpeg filter string
         p = p.replace("'", "'\\''")
         return p
 
