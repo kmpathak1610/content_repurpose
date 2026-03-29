@@ -24,6 +24,16 @@
 - [x] Clip segment filtering by clip range for SRT export
 - [x] Debug logging for transcription and export
 - [x] CPU-aware Whisper documentation and settings hints
+- [x] Twitter/X video download via yt-dlp
+- [x] Logo overlay in export (configurable position, size, opacity)
+- [x] Subtitle background color customization
+- [x] Social media posting to Twitter/X (OAuth2, tweepy)
+
+### UI Improvements
+- [x] LogoDialog for uploading/selecting logo image
+- [x] SubtitleStyleDialog for subtitle appearance (background color, font, position)
+- [x] PostDialog for composing and posting tweets with video
+- [x] Twitter/X export preset (1280x720, 140s max)
 
 ### Documentation
 - [x] Create plan.md -- comprehensive app architecture and CPU-optimized design
@@ -33,6 +43,8 @@
 
 - [ ] Test export with Hindi subtitles end-to-end on CPU
 - [ ] Verify subtitle sync accuracy in exported clips
+- [ ] Test Twitter/X posting flow with OAuth2 authentication
+- [ ] Test logo overlay rendering at different positions
 
 ## Pending (known issues)
 
@@ -40,12 +52,17 @@
 - [ ] Add async processing for Whisper transcription (UI freezes during long videos -- critical on CPU)
 - [ ] Fix duplicate export preset definitions (config.py vs renderer.py)
 - [ ] Add tests (pytest is in requirements but no test files)
+- [ ] Implement Twitter/X OAuth2 authentication flow in UI
+- [ ] Add logo preview in video player (show overlay position before export)
 
 ### Medium Priority
 - [ ] Implement smart crop using face detection (opencv is installed but unused)
 - [ ] Fix LLM clip score hard-coding (all LLM clips score 0.8 regardless of quality)
 - [ ] Add soft subtitle support (sidecar file instead of burned-in)
 - [ ] Add transcription progress callback (show % complete during Whisper on CPU)
+- [ ] Add subtitle position presets (top, center, bottom)
+- [ ] Add logo opacity slider with live preview
+- [ ] Store social media credentials securely (keyring/os keychain)
 
 ### Low Priority
 - [ ] Clean up unused dependencies (moviepy, pydub)
@@ -65,6 +82,10 @@
 - [ ] Save/load project state (open recent projects)
 - [ ] Keyboard shortcut customization
 - [ ] Plugin system for custom export formats
+- [ ] Multi-platform posting (Instagram, TikTok, Facebook)
+- [ ] Batch posting (schedule multiple clips)
+- [ ] Post analytics dashboard (views, likes, engagement tracking)
+- [ ] Auto-hashtag generation using LLM
 
 ### CPU-Specific Optimizations
 - [ ] Add Whisper model caching (avoid reloading on repeated transcriptions)
@@ -79,6 +100,18 @@
 - [ ] Auto-title generation for clips using LLM
 - [ ] Trend-based clip scoring (compare against viral content patterns)
 - [ ] Face detection for smart crop (using opencv)
+
+### Social Media Features
+- [ ] Instagram posting via Graph API
+- [ ] TikTok posting via TikTok API
+- [ ] Facebook/Reels posting via Graph API
+- [ ] Batch export + post workflow (export all clips, post in sequence)
+- [ ] Post scheduling (queue clips for future posting)
+- [ ] Thumbnail customization before posting
+- [ ] Cross-posting (one clip to multiple platforms)
+- [ ] Post performance tracking and analytics
+- [ ] Auto-generate alt text for accessibility
+- [ ] A/B test different titles/descriptions
 
 ### Technical
 - [ ] Migrate to PySide6 multimedia with Qt6 video pipeline

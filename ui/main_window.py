@@ -86,6 +86,8 @@ class MainWindow(QMainWindow):
         self.source_url: Optional[str] = None
         self.youtube_subs_path: Optional[Path] = None
         self._available_srt_files: list = []
+        self.current_style: dict = {}
+        self.current_logo_settings: dict = {}
 
         # UI Components
         self.media_player: Optional[QMediaPlayer] = None
@@ -254,6 +256,16 @@ class MainWindow(QMainWindow):
         export_btn.clicked.connect(self.export_selected_clip)
         toolbar.addWidget(export_btn)
 
+        # Post to Twitter/X button
+        post_btn = QPushButton("🐦 Post")
+        post_btn.clicked.connect(self.post_to_twitter)
+        toolbar.addWidget(post_btn)
+
+        # Logo button
+        logo_btn = QPushButton("🖼️ Logo")
+        logo_btn.clicked.connect(self.select_logo)
+        toolbar.addWidget(logo_btn)
+
     def create_left_panel(self) -> QWidget:
         """Create left panel with video preview"""
 
@@ -350,7 +362,7 @@ class MainWindow(QMainWindow):
         return panel
 
     def create_right_panel(self) -> QWidget:
-        """Create right panel with transcript and clips"""
+        """Create right panel with transcript, clips, and style panel"""
 
         panel = QWidget()
         layout = QVBoxLayout(panel)
@@ -367,9 +379,21 @@ class MainWindow(QMainWindow):
         clips_tab = self.create_clips_tab()
         tabs.addTab(clips_tab, "Detected Clips")
 
+        # Style tab (Descript-like caption style panel)
+        from ui.dialogs import StylePanel
+
+        self.style_panel = StylePanel(config.CAPTION_PRESETS)
+        self.style_panel.styleChanged.connect(self._on_style_changed)
+        tabs.addTab(self.style_panel, "Style")
+
         layout.addWidget(tabs)
 
         return panel
+
+    def _on_style_changed(self, style: dict):
+        """Handle caption style changes from the StylePanel"""
+        self.current_style = style
+        self.status_label.setText(f"Style: {style.get('preset', 'custom')}")
 
     def create_transcript_tab(self) -> QWidget:
         """Create transcript editor tab"""
@@ -1141,6 +1165,61 @@ class MainWindow(QMainWindow):
             "<li>Subtitle generation</li>"
             "</ul>",
         )
+
+    @Slot()
+    def select_logo(self):
+        """Open logo selection dialog"""
+        from ui.dialogs import LogoUploadWidget
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Logo Settings")
+        layout = QVBoxLayout(dialog)
+
+        logo_widget = LogoUploadWidget()
+        layout.addWidget(logo_widget)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec():
+            self.current_logo_settings = logo_widget.get_settings()
+            if self.current_logo_settings.get("logo_path"):
+                self.status_label.setText(
+                    f"Logo set: {Path(self.current_logo_settings['logo_path']).name}"
+                )
+            else:
+                self.status_label.setText("Logo removed")
+
+    @Slot()
+    def post_to_twitter(self):
+        """Post selected clip to Twitter/X"""
+        from ui.dialogs import PostDialog
+
+        # Get selected clip
+        selected_items = self.clips_list.selectedItems()
+        clip_title = ""
+        if selected_items:
+            index = self.clips_list.row(selected_items[0])
+            if index < len(self.detected_clips):
+                clip_title = self.detected_clips[index].title
+
+        dialog = PostDialog(clip_title, self)
+        if dialog.exec():
+            data = dialog.get_post_data()
+            self.status_label.setText(
+                f"Posting to Twitter: {data['tweet_text'][:50]}..."
+            )
+            # TODO: Implement actual Twitter API posting
+            QMessageBox.information(
+                self,
+                "Twitter/X",
+                "Twitter posting will be available after API integration.\n"
+                f"Tweet text: {data['tweet_text']}\n"
+                f"Hashtags: {data['hashtags']}",
+            )
 
 
 def main():
