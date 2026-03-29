@@ -162,28 +162,36 @@ class TranscriptionEngine:
         self,
         segments: Optional[List[Dict[str, Any]]] = None,
         output_path: Optional[Path] = None,
+        offset: float = 0.0,
     ) -> str:
-        """Export transcript as SRT subtitle file"""
+        """Export transcript as SRT subtitle file
+
+        Args:
+            segments: Transcript segments
+            output_path: Where to write the SRT
+            offset: Subtract this from all timestamps (use for clip exports
+                    where the clip starts partway through the video)
+        """
 
         segments = segments or self.current_transcript
 
         if output_path is None:
             output_path = Path("transcript.srt")
 
-        srt_content = self._generate_srt(segments)
+        srt_content = self._generate_srt(segments, offset=offset)
 
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(srt_content)
 
         return str(output_path)
 
-    def _generate_srt(self, segments: List[Dict[str, Any]]) -> str:
+    def _generate_srt(self, segments: List[Dict[str, Any]], offset: float = 0.0) -> str:
         """Generate SRT format from segments"""
 
         srt_lines = []
         for i, seg in enumerate(segments, 1):
-            start_time = self._format_srt_time(seg["start"])
-            end_time = self._format_srt_time(seg["end"])
+            start_time = self._format_srt_time(max(0, seg["start"] - offset))
+            end_time = self._format_srt_time(max(0, seg["end"] - offset))
             text = seg["text"]
 
             srt_lines.append(f"{i}\n{start_time} --> {end_time}\n{text}\n")

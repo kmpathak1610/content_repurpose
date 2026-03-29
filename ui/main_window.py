@@ -749,14 +749,21 @@ class MainWindow(QMainWindow):
         # Determine if vertical
         vertical = "9:16" in format_text
 
-        # Generate SRT for subtitles — use self.current_transcript (works for both Whisper and SRT sources)
+        # Generate SRT for subtitles — filter to clip range, offset timestamps to clip start
         srt_path = None
         if self.add_subtitles_check.isChecked():
+            clip_segs = [
+                s
+                for s in self.current_transcript
+                if s["end"] > clip.start_time and s["start"] < clip.end_time
+            ]
             srt_path = self.transcriber.export_srt(
-                self.current_transcript, config.CACHE_DIR / "temp.srt"
+                clip_segs,
+                config.CACHE_DIR / "temp.srt",
+                offset=clip.start_time,
             )
             print(
-                f"[DEBUG] SRT written to: {srt_path}, size: {Path(srt_path).stat().st_size if Path(srt_path).exists() else 0} bytes"
+                f"[DEBUG] SRT: {Path(srt_path).stat().st_size if Path(srt_path).exists() else 0} bytes, {len(clip_segs)} segments"
             )
 
         self.status_label.setText(f"Exporting clip: {clip.title}")
