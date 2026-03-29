@@ -280,19 +280,10 @@ class VideoRenderer:
         preset: str = "reels",
     ) -> Path:
         """
-        Create a clip with subtitles in one operation
-
-        Args:
-            video_path: Source video
-            srt_path: SRT subtitle file
-            start_time: Start time
-            end_time: End time
-            output_path: Output path
-            vertical: Convert to vertical
-            preset: Export preset
-
-        Returns:
-            Path to final video
+        Create a clip with subtitles in one operation.
+        Uses two-pass approach to avoid Windows subtitle filter path bugs:
+        1. Extract the clip (with optional vertical crop)
+        2. Burn subtitles in a second pass
         """
         video_path = Path(video_path)
 
@@ -302,8 +293,8 @@ class VideoRenderer:
 
         preset_config = self.PRESETS.get(preset, self.PRESETS["reels"])
 
-        # Build filter chain as a single -vf string
-        vf_parts = []
+        # --- Pass 1: Extract clip (with optional vertical crop) ---
+        temp_clip = self.output_dir / f"_temp_clip_{start_time:.0f}.mp4"
 
         if vertical:
             probe = ffmpeg.probe(str(video_path))
@@ -312,42 +303,103 @@ class VideoRenderer:
             original_height = int(video_info["height"])
             crop_width = original_height * 9 // 16
             crop_x = (original_width - crop_width) // 2
-            vf_parts.append(f"crop={crop_width}:{original_height}:{crop_x}:0")
-            vf_parts.append(f"scale={preset_config['width']}:{preset_config['height']}")
 
+            cmd_pass1 = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(start_time),
+                "-i",
+                str(video_path),
+                "-to",
+                str(end_time - start_time),
+                "-vf",
+                f"crop={crop_width}:{original_height}:{crop_x}:0,scale={preset_config['width']}:{preset_config['height']}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-r",
+                str(preset_config["fps"]),
+                "-c:a",
+                "aac",
+                str(temp_clip),
+            ]
+        else:
+            cmd_pass1 = [
+                "ffmpeg",
+                "-y",
+                "-ss",
+                str(start_time),
+                "-i",
+                str(video_path),
+                "-to",
+                str(end_time - start_time),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                str(temp_clip),
+            ]
+
+        self._run_ffmpeg_cmd(cmd_pass1)
+
+        # --- Pass 2: Burn subtitles ---
         if srt_path:
-            escaped_srt = self._escape_ffmpeg_path(Path(srt_path))
-            vf_parts.append(f"subtitles={escaped_srt}")
+            # Copy SRT to a simple temp file and use relative path
+            # This avoids Windows drive-letter colon issues in ffmpeg subtitle filter
+            import shutil
 
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            str(start_time),
-            "-i",
-            str(video_path),
-            "-to",
-            str(end_time - start_time),
-        ]
+            simple_srt = self.output_dir / "_temp_subs.srt"
+            shutil.copy2(str(srt_path), str(simple_srt))
 
-        if vf_parts:
-            cmd += ["-vf", ",".join(vf_parts)]
+            # Use relative path — ffmpeg resolves relative to CWD
+            try:
+                rel_srt = str(simple_srt.relative_to(Path.cwd()))
+            except ValueError:
+                # If not relative to CWD, use absolute with forward slashes
+                rel_srt = str(simple_srt).replace("\\", "/")
 
-        cmd += [
-            "-c:v",
-            "libx264",
-            "-preset",
-            "fast",
-            "-crf",
-            "23",
-            "-r",
-            str(preset_config["fps"]),
-            "-c:a",
-            "aac",
-            str(output_path),
-        ]
+            cmd_pass2 = [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(temp_clip),
+                "-vf",
+                f"subtitles={rel_srt}",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-c:a",
+                "copy",
+                str(output_path),
+            ]
 
-        self._run_ffmpeg_cmd(cmd)
+            self._run_ffmpeg_cmd(cmd_pass2)
+
+            try:
+                simple_srt.unlink()
+            except Exception:
+                pass
+        else:
+            import shutil
+
+            shutil.move(str(temp_clip), str(output_path))
+
+        # Clean up temp clip
+        try:
+            temp_clip.unlink()
+        except Exception:
+            pass
 
         self.last_output = output_path
         return output_path
@@ -355,13 +407,13 @@ class VideoRenderer:
     def _escape_ffmpeg_path(self, path: Path) -> str:
         """
         Escape a file path for use in ffmpeg subtitles filter.
-        Windows paths like D:/path need the colon escaped as D\\:/path
-        because ffmpeg uses ':' as filter parameter separator.
+        On Windows, the colon in drive letters (D:) acts as a filter option
+        separator. Escape it so ffmpeg treats it as part of the filename.
         """
         p = str(path).replace("\\", "/")
-        # Escape the colon after drive letter: D:/ -> D\:/  (Windows only)
+        # Escape colon after drive letter: D:/ -> D\\:/ (double backslash)
         if len(p) >= 2 and p[1] == ":":
-            p = p[0] + "\\:" + p[2:]
+            p = p[0] + "\\\\:" + p[2:]
         return p
 
     def _run_ffmpeg_cmd(self, cmd: list):
