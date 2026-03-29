@@ -317,7 +317,7 @@ class VideoRenderer:
 
         if srt_path:
             escaped_srt = self._escape_ffmpeg_path(Path(srt_path))
-            vf_parts.append(f"subtitles='{escaped_srt}'")
+            vf_parts.append(f"subtitles={escaped_srt}")
 
         cmd = [
             "ffmpeg",
@@ -353,12 +353,15 @@ class VideoRenderer:
         return output_path
 
     def _escape_ffmpeg_path(self, path: Path) -> str:
-        """Escape a file path for use in ffmpeg filter strings (Windows-safe)"""
-        p = str(path.resolve())
-        # Convert backslashes to forward slashes — ffmpeg handles this on Windows
-        p = p.replace("\\", "/")
-        # Escape single quotes for ffmpeg filter string
-        p = p.replace("'", "'\\''")
+        """
+        Escape a file path for use in ffmpeg subtitles filter.
+        Windows paths like D:/path need the colon escaped as D\\:/path
+        because ffmpeg uses ':' as filter parameter separator.
+        """
+        p = str(path).replace("\\", "/")
+        # Escape the colon after drive letter: D:/ -> D\:/  (Windows only)
+        if len(p) >= 2 and p[1] == ":":
+            p = p[0] + "\\:" + p[2:]
         return p
 
     def _run_ffmpeg_cmd(self, cmd: list):
