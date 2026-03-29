@@ -257,9 +257,10 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(export_btn)
 
         # Post to Twitter/X button
-        post_btn = QPushButton("🐦 Post")
-        post_btn.clicked.connect(self.post_to_twitter)
-        toolbar.addWidget(post_btn)
+        self.post_btn = QPushButton("🐦 Post")
+        self.post_btn.clicked.connect(self.post_to_twitter)
+        self.post_btn.setVisible(False)  # Hidden by default, shown after video load
+        toolbar.addWidget(self.post_btn)
 
         # Logo button
         logo_btn = QPushButton("🖼️ Logo")
@@ -577,6 +578,7 @@ class MainWindow(QMainWindow):
         if file_path:
             self.source_url = None
             self.youtube_subs_path = None
+            self.post_btn.setVisible(False)  # No posting for local files
             self.load_video(file_path)
 
     @Slot()
@@ -603,6 +605,10 @@ class MainWindow(QMainWindow):
 
             video_path, video_info = self.downloader.download(url)
             self.current_video_path = video_path
+
+            # Show Post button only for YouTube videos (not Twitter or local)
+            is_youtube = self.downloader.is_youtube_url(url)
+            self.post_btn.setVisible(is_youtube)
 
             # Update UI
             self.video_title_label.setText(video_info.get("title", "Unknown"))
@@ -702,7 +708,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def detect_clips(self):
-        """Detect viral clips from transcript"""
+        """Detect viral clips from transcript, or create single clip for Twitter videos"""
 
         if not self.current_transcript:
             self.show_error("No transcript available. Please transcribe first.")
@@ -712,17 +718,36 @@ class MainWindow(QMainWindow):
         self.progress_bar.setRange(0, 0)
 
         try:
-            # Get number of clips to detect
-            num_clips = int(self.num_clips_spin.currentText())
-            self.clip_detector.num_clips = num_clips
+            # For Twitter/X videos, create a single clip of the entire video
+            if self.source_url and self.downloader.is_twitter_url(self.source_url):
+                from core.clip_detector import ClipSegment
 
-            # Pass LLM if available
-            llm_provider = self.llm if self.llm and self.llm.is_available() else None
+                first_seg = self.current_transcript[0]
+                last_seg = self.current_transcript[-1]
+                self.detected_clips = [
+                    ClipSegment(
+                        start_time=first_seg["start"],
+                        end_time=last_seg["end"],
+                        title="Full Video",
+                        hook=first_seg["text"][:100],
+                        score=1.0,
+                        reason="twitter_single_clip",
+                        topics=[],
+                    )
+                ]
+                self.post_btn.setVisible(False)  # No posting for Twitter clips
+            else:
+                # Normal viral clip detection for YouTube/local videos
+                num_clips = int(self.num_clips_spin.currentText())
+                self.clip_detector.num_clips = num_clips
 
-            # Detect clips
-            self.detected_clips = self.clip_detector.detect_clips(
-                self.current_transcript, use_llm=bool(llm_provider)
-            )
+                llm_provider = (
+                    self.llm if self.llm and self.llm.is_available() else None
+                )
+
+                self.detected_clips = self.clip_detector.detect_clips(
+                    self.current_transcript, use_llm=bool(llm_provider)
+                )
 
             # Update UI
             self.populate_clips_list()
