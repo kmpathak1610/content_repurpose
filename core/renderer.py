@@ -359,12 +359,13 @@ class VideoRenderer:
             simple_srt = self.output_dir / "_temp_subs.srt"
             shutil.copy2(str(srt_path), str(simple_srt))
 
-            # Use relative path — ffmpeg resolves relative to CWD
+            # Use relative path with forward slashes — avoids Windows drive colon issue
             try:
                 rel_srt = str(simple_srt.relative_to(Path.cwd()))
             except ValueError:
-                # If not relative to CWD, use absolute with forward slashes
-                rel_srt = str(simple_srt).replace("\\", "/")
+                rel_srt = str(simple_srt)
+            # Always use forward slashes for ffmpeg
+            rel_srt = rel_srt.replace("\\", "/")
 
             cmd_pass2 = [
                 "ffmpeg",
