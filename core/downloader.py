@@ -37,6 +37,20 @@ class VideoDownloader:
         ]
         return any(domain in source.lower() for domain in youtube_domains)
 
+    def is_twitter_url(self, source: str) -> bool:
+        """Check if the source is a Twitter/X URL"""
+        twitter_domains = [
+            "twitter.com",
+            "x.com",
+            "t.co",
+            "mobile.twitter.com",
+        ]
+        return any(domain in source.lower() for domain in twitter_domains)
+
+    def is_supported_url(self, source: str) -> bool:
+        """Check if the source is a supported URL (YouTube or Twitter)"""
+        return self.is_youtube_url(source) or self.is_twitter_url(source)
+
     def fetch_video_info(self, source: str) -> Dict[str, Any]:
         """Get video metadata without downloading"""
         ydl_opts = {
@@ -64,7 +78,7 @@ class VideoDownloader:
         Download video from URL or load local file
 
         Args:
-            source: YouTube URL or local file path
+            source: YouTube URL, Twitter/X URL, or local file path
             quality: Video quality preference (best, worst, bestvideo+bestaudio)
 
         Returns:
@@ -72,6 +86,8 @@ class VideoDownloader:
         """
         if self.is_youtube_url(source):
             return self._download_youtube(source, quality)
+        elif self.is_twitter_url(source):
+            return self._download_twitter(source, quality)
         else:
             return self._load_local(source)
 
@@ -129,6 +145,66 @@ class VideoDownloader:
         downloaded_files = list(self.output_dir.glob(f"{safe_title}.*"))
         if not downloaded_files:
             raise FileNotFoundError(f"Failed to download video: {url}")
+
+        self.current_video_path = downloaded_files[0]
+        return self.current_video_path, self.video_info
+
+    def _download_twitter(
+        self, url: str, quality: str = "best"
+    ) -> Tuple[Path, Dict[str, Any]]:
+        """Download video from Twitter/X using yt-dlp"""
+
+        # Get video info first
+        self.video_info = self.fetch_video_info(url)
+
+        # Sanitize filename
+        safe_title = "".join(
+            c
+            for c in self.video_info.get("title", "twitter_video")
+            if c.isalnum() or c in " -_"
+        ).strip()[:50]
+        if not safe_title:
+            safe_title = "twitter_video"
+
+        # yt-dlp handles Twitter URLs natively
+        format_options = [
+            "best[ext=mp4]/best",
+            "best",
+            "worst",
+        ]
+
+        last_error = None
+        success = False
+
+        for fmt in format_options:
+            try:
+                ydl_opts = {
+                    "format": fmt,
+                    "outtmpl": str(self.output_dir / f"{safe_title}.%(ext)s"),
+                    "merge_output_format": "mp4",
+                    "progress_hooks": [self._progress_hook],
+                }
+
+                print(f"Downloading Twitter/X video with format: {fmt}")
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+
+                success = True
+                break
+
+            except Exception as e:
+                last_error = str(e)
+                print(f"Format {fmt} failed: {last_error}")
+                continue
+
+        if not success:
+            raise RuntimeError(f"Failed to download Twitter video: {last_error}")
+
+        # Find the downloaded file
+        downloaded_files = list(self.output_dir.glob(f"{safe_title}.*"))
+        if not downloaded_files:
+            raise FileNotFoundError(f"Failed to download video from Twitter: {url}")
 
         self.current_video_path = downloaded_files[0]
         return self.current_video_path, self.video_info

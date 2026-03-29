@@ -31,7 +31,7 @@ from PySide6.QtGui import QFont, QColor, QPixmap, QPainter
 
 
 class URLDialog(QDialog):
-    """Dialog for entering YouTube URL"""
+    """Dialog for entering YouTube or Twitter/X URL"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -42,10 +42,12 @@ class URLDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # URL input
-        layout.addWidget(QLabel("Enter YouTube URL:"))
+        layout.addWidget(QLabel("Enter YouTube or Twitter/X URL:"))
 
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("https://www.youtube.com/watch?v=...")
+        self.url_input.setPlaceholderText(
+            "https://www.youtube.com/watch?v=... or https://x.com/.../status/..."
+        )
         layout.addWidget(self.url_input)
 
         # Quality selection
